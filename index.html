@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>할 일 목록</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#4f6ef7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="할 일">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --text:#222; --muted:#888; --accent:#4f6ef7; --line:#e6e8ec; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181d; --card:#20232a; --text:#eceef2; --muted:#8a90a0; --accent:#7b93ff; --line:#2e323b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,"Malgun Gothic",sans-serif; }
+  main { max-width:520px; margin:40px auto; padding:0 16px; }
+  h1 { font-size:1.6rem; margin:0 0 16px; }
+  .card { background:var(--card); border-radius:12px; box-shadow:0 2px 10px rgba(0,0,0,.08); overflow:hidden; }
+  form { display:flex; border-bottom:1px solid var(--line); }
+  input[type=text] { flex:1; border:0; padding:14px 16px; font-size:1rem; background:transparent; color:var(--text); outline:none; }
+  form button { border:0; background:var(--accent); color:#fff; padding:0 20px; font-size:1rem; cursor:pointer; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--line); }
+  li span { flex:1; word-break:break-all; }
+  li.done span { text-decoration:line-through; color:var(--muted); }
+  li button { border:0; background:none; color:var(--muted); font-size:1.2rem; cursor:pointer; }
+  li button:hover { color:#e5484d; }
+  input[type=checkbox] { width:18px; height:18px; accent-color:var(--accent); }
+  footer { display:flex; justify-content:space-between; align-items:center; padding:10px 16px; font-size:.85rem; color:var(--muted); }
+  .filters button { border:0; background:none; color:var(--muted); cursor:pointer; padding:4px 8px; border-radius:6px; }
+  .filters button.on { background:var(--accent); color:#fff; }
+  .clear { border:0; background:none; color:var(--muted); cursor:pointer; }
+  input[type=date] { border:0; border-left:1px solid var(--line); padding:0 8px; background:transparent; color:var(--text); font:inherit; font-size:.85rem; }
+  li input[type=date] { border:1px solid var(--line); border-radius:6px; padding:3px 6px; }
+  .badge { font-size:.75rem; padding:2px 8px; border-radius:10px; white-space:nowrap; }
+  .badge.over { background:#e5484d22; color:#e5484d; }
+  .badge.soon { background:#f7931a22; color:#e07b00; }
+  li.done .badge { display:none; }
+  .empty { padding:24px; text-align:center; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>📝 할 일 목록</h1>
+  <div class="card">
+    <form id="form">
+      <input type="text" id="input" placeholder="할 일을 입력하세요" autocomplete="off" autofocus>
+      <input type="date" id="due" title="마감일(선택)">
+      <button type="submit">추가</button>
+    </form>
+    <ul id="list"></ul>
+    <footer>
+      <span id="count"></span>
+      <span class="filters" id="filters">
+        <button data-f="all" class="on">전체</button>
+        <button data-f="active">진행중</button>
+        <button data-f="done">완료</button>
+      </span>
+      <button class="clear" id="clear">완료 삭제</button>
+    </footer>
+  </div>
+</main>
+<script>
+  const KEY = "todos-v1";
+  let todos = [], filter = "all";
+  try { todos = JSON.parse(localStorage.getItem(KEY)) || []; } catch {}
+  const $ = id => document.getElementById(id);
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(todos)); } catch {} };
+
+  // 오늘 기준 남은 일수 (음수면 기한 초과). 시간대 오차를 피하려고 날짜 숫자만 비교
+  function dayDiff(s) {
+    const [y, m, d] = s.split("-").map(Number), n = new Date();
+    return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())) / 864e5);
+  }
+
+  function render() {
+    const shown = todos.filter(t => filter === "all" || (filter === "done") === t.done)
+      .sort((a, b) => (a.due || "9999") < (b.due || "9999") ? -1 : (a.due || "9999") > (b.due || "9999") ? 1 : 0);
+    const list = $("list");
+    list.innerHTML = "";
+    if (!shown.length) list.innerHTML = '<div class="empty">할 일이 없습니다</div>';
+    for (const t of shown) {
+      const li = document.createElement("li");
+      if (t.done) li.className = "done";
+      const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: t.done });
+      cb.onchange = () => { t.done = cb.checked; save(); render(); };
+      const sp = document.createElement("span");
+      sp.textContent = t.text;
+      const dd = Object.assign(document.createElement("input"), { type: "date", value: t.due || "", title: "마감일 수정" });
+      dd.onchange = () => { t.due = dd.value; save(); render(); };
+      const diff = t.due ? dayDiff(t.due) : null;
+      if (diff !== null && diff <= 1) {
+        const b = document.createElement("span");
+        b.className = "badge " + (diff < 0 ? "over" : "soon");
+        b.style.flex = "none";
+        b.textContent = diff < 0 ? "기한 초과" : diff === 0 ? "오늘" : "내일";
+        li.append(cb, sp, b, dd);
+      } else li.append(cb, sp, dd);
+      const del = document.createElement("button");
+      del.textContent = "✕"; del.title = "삭제";
+      del.onclick = () => { todos = todos.filter(x => x !== t); save(); render(); };
+      li.append(del);
+      list.append(li);
+    }
+    $("count").textContent = `남은 할 일 ${todos.filter(t => !t.done).length}개`;
+    document.querySelectorAll("#filters button").forEach(b => b.classList.toggle("on", b.dataset.f === filter));
+  }
+
+  $("form").onsubmit = e => {
+    e.preventDefault();
+    const text = $("input").value.trim();
+    if (!text) return;
+    todos.push({ text, done: false, due: $("due").value });
+    $("input").value = ""; $("due").value = "";
+    save(); render();
+  };
+  $("filters").onclick = e => { if (e.target.dataset.f) { filter = e.target.dataset.f; render(); } };
+  $("clear").onclick = () => { todos = todos.filter(t => !t.done); save(); render(); };
+  render();
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
